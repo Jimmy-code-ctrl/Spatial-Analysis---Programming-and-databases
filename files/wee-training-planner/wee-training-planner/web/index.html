@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Training Site Planner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Training Site Planner, home">
+      <img class="logo" src="LOGO.png" alt="AICC logo">
+      <span class="wordmark"><b>Training Site Planner</b><small>WEECVC Project</small></span>
+    </a>
+    <nav id="district-tabs" class="dtabs" role="tablist" aria-label="Districts"></nav>
+    <button id="btn-import" type="button" class="btn btn-yellow">Import Solstice export</button>
+  </header>
+
+  <div class="shell">
+    <aside class="side">
+      <div class="steps" role="tablist" aria-label="Planning steps">
+        <button type="button" role="tab" class="step" data-pane="data" aria-selected="true"><span class="num">1</span>Data</button>
+        <button type="button" role="tab" class="step" data-pane="plan" aria-selected="false"><span class="num">2</span>Plan</button>
+        <button type="button" role="tab" class="step" data-pane="results" aria-selected="false"><span class="num">3</span>Results</button>
+      </div>
+
+      <div class="panes">
+        <section id="pane-data" class="pane" role="tabpanel" aria-label="Data"></section>
+
+        <section id="pane-plan" class="pane" role="tabpanel" aria-label="Plan" hidden>
+          <h2 class="h-pane">Plan a training</h2>
+          <p class="lede">Choose how many farmers to invite. The planner picks the farmers nearest each possible venue.</p>
+
+          <div class="field">
+            <label for="n">Farmers to mobilise</label>
+            <div class="n-row">
+              <input id="n" type="number" min="1" step="1" value="40" inputmode="numeric">
+              <input id="n-range" type="range" min="1" max="100" value="40" aria-label="Farmers to mobilise, slider">
+            </div>
+            <label class="switch"><input id="all" type="checkbox"><span>Everyone in the selected EPAs</span></label>
+            <p id="scope-note" class="hint"></p>
+          </div>
+
+          <div class="field">
+            <span class="label" id="lbl-epa">Invite from</span>
+            <div id="epa-chips" class="chips" role="group" aria-labelledby="lbl-epa"></div>
+          </div>
+
+          <fieldset class="seg" aria-label="Best means">
+            <legend>Best means</legend>
+            <label><input type="radio" name="obj" value="cost" checked><span>Lowest total cost</span></label>
+            <label><input type="radio" name="obj" value="fairness"><span>Shortest trip for the farthest farmer</span></label>
+          </fieldset>
+
+          <label class="switch"><input id="inc-flagged" type="checkbox"><span>Include flagged locations (possible GPS errors)</span></label>
+
+          <details class="costs" open>
+            <summary>Cost assumptions in MWK</summary>
+            <div class="grid2">
+              <label for="p-rate">Transport per road km</label><input id="p-rate" type="number" min="0" step="10" value="100">
+              <label for="p-ref">Refreshments per farmer</label><input id="p-ref" type="number" min="0" step="500" value="5000">
+              <label for="p-fee">Venue fee if not recorded</label><input id="p-fee" type="number" min="0" step="1000" value="0">
+              <label for="p-walk">Walk in within (km)</label><input id="p-walk" type="number" min="0" step="0.5" value="3">
+              <label for="p-circ">Road factor</label><input id="p-circ" type="number" min="1" max="3" step="0.05" value="1.3">
+            </div>
+            <p class="hint">Example rates: replace them with your project's. Road km is straight-line km times the road factor. Transport is a round trip and is not paid within the walk-in distance.</p>
+          </details>
+
+          <div class="stack">
+            <button id="btn-plan" type="button" class="btn btn-yellow btn-wide">Find the best meeting place</button>
+            <button id="btn-test" type="button" class="btn btn-ghost btn-wide" aria-pressed="false">Try a point on the map</button>
+          </div>
+        </section>
+
+        <section id="pane-results" class="pane" role="tabpanel" aria-label="Results" hidden>
+          <div id="results-empty" class="empty-note">
+            <p><b>No plan yet.</b> Set the number of farmers in the Plan step, then press Find the best meeting place.</p>
+          </div>
+          <div id="results-body" hidden></div>
+          <details id="saved-wrap" class="saved-wrap" hidden>
+            <summary>Saved scenarios</summary>
+            <ul id="saved" class="saved"></ul>
+          </details>
+        </section>
+      </div>
+      <p class="privacy">Farmer names and phone numbers stay in your database and appear only in the attendee list you download.</p>
+    </aside>
+
+    <main class="stage">
+      <div id="map" role="application" aria-label="Map of farmers, EPAs and possible venues"></div>
+      <div id="kpis" class="kpis" aria-live="polite"></div>
+      <div id="legend" class="legend" aria-label="Map legend"></div>
+
+      <div id="welcome" class="welcome" hidden>
+        <div class="welcome-card">
+          <svg viewBox="0 0 120 70" class="welcome-art" aria-hidden="true">
+            <path d="M0 52 C20 44 34 58 56 50 S96 44 120 50 V70 H0Z" fill="#CFE3E6"/>
+            <path d="M0 60 C24 54 40 66 62 58 S98 54 120 60 V70 H0Z" fill="#9CC7CD"/>
+            <g fill="#fff" stroke="#0D3B45" stroke-width="1.6">
+              <circle cx="60" cy="20" r="9"/><circle cx="49" cy="30" r="9"/><circle cx="71" cy="30" r="9"/>
+              <circle cx="53" cy="41" r="9"/><circle cx="67" cy="41" r="9"/>
+            </g>
+            <circle cx="60" cy="31" r="4" fill="#F2C14E" stroke="#0D3B45" stroke-width="1.6"/>
+          </svg>
+          <h2>Start with your Solstice export</h2>
+          <p>Drop the beneficiary file here. The planner reads each farmer's EPA, district and GPS location, flags suspicious points, and maps the rest.</p>
+          <div id="drop-welcome" class="drop" tabindex="0" role="button" aria-label="Choose or drop a Solstice export file">
+            <b>Drop the .xlsx file here</b><span>or press to choose a file</span>
+          </div>
+          <button id="btn-sample" type="button" class="btn btn-ghost">Try the synthetic sample (4 EPAs)</button>
+        </div>
+      </div>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </main>
+  </div>
+
+  <dialog id="dlg-import" aria-labelledby="t-import">
+    <h2 id="t-import">Import Solstice export</h2>
+    <div id="drop" class="drop" tabindex="0" role="button" aria-label="Choose or drop a Solstice export file">
+      <b>Drop the .xlsx file here</b><span>or press to choose a file</span>
+    </div>
+    <input id="file-solstice" type="file" accept=".xlsx,.xlsm,.csv" hidden>
+    <p id="file-name" class="hint"></p>
+    <label class="switch"><input id="opt-replace" type="checkbox"><span>Replace farmers already stored for the EPAs in this file</span></label>
+    <label class="inline">Flag locations more than <input id="opt-km" type="number" min="5" max="200" value="30"> km from the rest of their EPA</label>
+    <p class="hint">Only the fields the planner needs are read: EPA, district, ward, village, name, sex, phone, category and GPS location. Dates of birth, disability and household details are ignored.</p>
+    <div id="import-report" aria-live="polite"></div>
+    <div class="dlg-actions">
+      <button id="import-go" type="button" class="btn btn-ink" disabled>Import</button>
+      <button id="import-close" type="button" class="btn btn-ghost">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="dlg-file" aria-labelledby="t-file">
+    <h2 id="t-file">Import a file</h2>
+    <fieldset class="seg">
+      <legend>What is in the file?</legend>
+      <label><input type="radio" name="ftype" value="venues" checked><span>Venue list (CSV)</span></label>
+      <label><input type="radio" name="ftype" value="epa"><span>EPA boundaries (GeoJSON)</span></label>
+      <label><input type="radio" name="ftype" value="district"><span>District boundary (GeoJSON)</span></label>
+    </fieldset>
+    <label for="file-other">File</label>
+    <input id="file-other" type="file" accept=".csv,.txt,.geojson,.json">
+    <p id="file-help" class="hint"></p>
+    <p id="file-msg" class="msg" role="status"></p>
+    <div class="dlg-actions">
+      <button id="file-go" type="button" class="btn btn-ink">Import</button>
+      <button id="file-close" type="button" class="btn btn-ghost">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="dlg-venue" aria-labelledby="t-venue">
+    <h2 id="t-venue">Add a venue</h2>
+    <p id="venue-where" class="hint"></p>
+    <label for="v-name">Name</label>
+    <input id="v-name" maxlength="120" placeholder="e.g. Mtunthama Primary School">
+    <label for="v-type">Type</label>
+    <select id="v-type"></select>
+    <label for="v-fee">Hire fee in MWK (leave empty if unknown)</label>
+    <input id="v-fee" type="number" min="0" step="1000">
+    <p id="venue-msg" class="msg" role="status"></p>
+    <div class="dlg-actions">
+      <button id="venue-save" type="button" class="btn btn-ink">Save venue</button>
+      <button id="venue-cancel" type="button" class="btn btn-ghost">Cancel</button>
+    </div>
+  </dialog>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="csvparse.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
